@@ -115,7 +115,7 @@ There are a couple of ENV vars
 docker run --name vulnz -e NVD_API_KEY=myapikey jeremylong/open-vulnerability-data-mirror:v7.0.1 
 
 # if you like use a volume 
-docker run --name vulnz -e NVD_API_KEY=myapikey -v cache:/usr/local/apache2/htdocs jeremylong/open-vulnerability-data-mirror:7.0.1
+docker run --name vulnz -e NVD_API_KEY=myapikey -v cache:/usr/local/apache2/htdocs jeremylong/open-vulnerability-data-mirror:v7.0.1
 
 # adjust the memory usage
 docker run --name vulnz -e JAVA_OPT=-Xmx2g jeremylong/open-vulnerability-data-mirror:v7.0.1
