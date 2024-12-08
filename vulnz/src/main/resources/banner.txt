@@ -4,5 +4,7 @@ _/      _/   _/    _/    _/     _/    _/       _/
  _/  _/     _/    _/    _/     _/    _/     _/
   _/         _/_/_/    _/     _/    _/   _/_/_/_/
 
+Version: ${AnsiColor.GREEN}${application.version}${AnsiColor.DEFAULT}
+
 Open Vulnerability Project
 💖 Sponsor: https://github.com/sponsors/jeremylong

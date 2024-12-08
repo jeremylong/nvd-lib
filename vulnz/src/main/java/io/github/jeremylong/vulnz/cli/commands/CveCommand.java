@@ -77,6 +77,7 @@ public class CveCommand extends AbstractNvdCommand {
      * Hex code characters used in getHex.
      */
     private static final String HEXES = "0123456789abcdef";
+
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;
 
@@ -114,6 +115,14 @@ public class CveCommand extends AbstractNvdCommand {
     private NvdCveClientBuilder.CvssV3Severity cvssV3Severity;
     @CommandLine.Option(names = {"--interactive"}, description = "Displays a progress bar")
     private boolean interactive;
+
+    public File getCacheDirectory() {
+        if (configGroup != null && configGroup.cacheSettings != null) {
+            return configGroup.cacheSettings.directory;
+        } else {
+            return null;
+        }
+    }
 
     @Override
     public Integer timedCall() throws Exception {

@@ -107,6 +107,9 @@ There are a couple of ENV vars
 
 - `NVD_API_KEY`: define your API key
 - `DELAY`: override the delay - given in milliseconds. If you do not set an API KEY, the delay will be `10000`
+- `MAX_RETRY_ARG` Using max retry attempts
+- `MAX_RECORDS_PER_PAGE_ARG` Using max records per page
+- `METRICS_ENABLE` If is set to `true`, OpenMetrics data for the vulnz cli can be retrieved via the endpoint http://.../metrics
 
 ### Run
 
