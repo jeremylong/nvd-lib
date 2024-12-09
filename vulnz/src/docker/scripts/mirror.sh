@@ -34,10 +34,12 @@ fi
 
 java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
 
-echo "Valdiating the cache..."
-
-if ! find /usr/local/apache2/htdocs -name "*.gz" -type f -exec gzip -t {} \; ; then
-    echo "Corrupt gz files detected, clearing cache and re-running mirror"
-    rm -rf /usr/local/apache2/htdocs/*
-    java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
-fi
+echo "Validating the cache..."
+find /usr/local/apache2/htdocs -name "*.gz" -type f | while read -r file; do
+    if ! gzip -t "$file"; then
+        echo "Corrupt gz file detected: $file, clearing cache and re-running mirror"
+        rm -rf /usr/local/apache2/htdocs/*
+        java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
+        break
+    fi
+done
