@@ -79,6 +79,11 @@ Alternatively, run the CLI using the `-Xmx2g` argument:
 java -Xmx2g -jar ./vulnz-7.1.0.jar
 ```
 
+An option to save memory would be: `-XX:+UseStringDeduplication`:
+```bash
+export JAVA_OPTS="-Xmx2g -XX:+UseStringDeduplication"
+```
+
 ### Creating the Cache
 
 To create a local cache of the NVD CVE Data you can execute the following command
@@ -110,6 +115,7 @@ There are a couple of ENV vars
 - `MAX_RETRY_ARG` Using max retry attempts
 - `MAX_RECORDS_PER_PAGE_ARG` Using max records per page
 - `METRICS_ENABLE` If is set to `true`, OpenMetrics data for the vulnz cli can be retrieved via the endpoint http://.../metrics
+- `METRICS_WRITE_INTERVAL` Sets the update interval for generating metrics. Default: `5000`
 
 ### Run
 

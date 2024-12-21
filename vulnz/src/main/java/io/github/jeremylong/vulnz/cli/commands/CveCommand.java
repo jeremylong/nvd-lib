@@ -257,7 +257,7 @@ public class CveCommand extends AbstractNvdCommand {
         return processRequest(builder);
     }
 
-    private Integer processRequest(NvdCveClientBuilder builder, CacheProperties properties) throws InterruptedException {
+    private Integer processRequest(NvdCveClientBuilder builder, CacheProperties properties) {
         final ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         if (isPrettyPrint()) {
@@ -276,7 +276,6 @@ public class CveCommand extends AbstractNvdCommand {
                         GZIPInputStream gzipInputStream = new GZIPInputStream(fileInputStream)) {
                     data = objectMapper.readValue(gzipInputStream, CveApiJson20.class);
                 } catch (IOException exception) {
-                    Thread.sleep(10000);
                     throw new CacheException("Unable to read cached data: " + file, exception);
                 }
                 collectCves(cves, data.getVulnerabilities());

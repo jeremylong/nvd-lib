@@ -55,6 +55,9 @@ public class Application implements CommandLineRunner, ExitCodeGenerator {
     @Value("${application.version:0.0.0}")
     private String applicationVersion;
 
+    @Value("${spring.application.name:nvd}")
+    private String applicationName;
+
     Application(CommandLine.IFactory factory, MainCommand command) {
         this.factory = factory;
         this.command = command;
@@ -75,7 +78,12 @@ public class Application implements CommandLineRunner, ExitCodeGenerator {
 
     @Override
     public void run(String... args) {
-        Counter.builder().name("version").help("The project version").constLabels(Labels.of("version", applicationVersion)).register();
+        Counter.builder().name("application")
+                .help("Information about the current project version and name")
+                .constLabels(Labels.of("version", applicationVersion, "name", applicationName))
+                .register()
+                .inc();
+
         // add extra line to make output more readable
         System.err.println();
         exitCode = new CommandLine(command, factory).setCaseInsensitiveEnumValuesAllowed(true).execute(args);
