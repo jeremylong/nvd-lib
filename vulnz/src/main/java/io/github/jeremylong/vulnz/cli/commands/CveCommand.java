@@ -79,8 +79,10 @@ public class CveCommand extends AbstractNvdCommand {
      */
     private static final String HEXES = "0123456789abcdef";
 
-    private static final Gauge CVE_LOAD_COUNTER = Gauge.builder().name("cve_load_counter").help("Total number of loaded cve's").register();
-    private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of cached cve's").register();
+    private static final Gauge CVE_LOAD_COUNTER = Gauge.builder().name("cve_load_counter")
+            .help("Total number of loaded cve's").register();
+    private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of cached cve's")
+            .register();
 
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;

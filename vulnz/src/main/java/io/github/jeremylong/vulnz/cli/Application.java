@@ -77,11 +77,8 @@ public class Application implements CommandLineRunner, ExitCodeGenerator {
 
     @Override
     public void run(String... args) {
-        Counter.builder().name("application")
-                .help("Information about the current project version and name")
-                .constLabels(Labels.of("version", applicationVersion, "name", applicationName))
-                .register()
-                .inc();
+        Counter.builder().name("application").help("Information about the current project version and name")
+                .constLabels(Labels.of("version", applicationVersion, "name", applicationName)).register().inc();
 
         // add extra line to make output more readable
         System.err.println();
