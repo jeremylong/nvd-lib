@@ -23,7 +23,7 @@ LABEL org.label-schema.docker.cmd="docker run -it --rm --name mirror -e NVD_API_
 
 ENV user=mirror
 ENV BUILD_VERSION=$BUILD_VERSION
-ENV JAVA_OPT=-Xmx2g
+ENV JAVA_OPT="-XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=80.0"
 
 RUN apk update && \
     apk add --no-cache bash openjdk17 dcron nss supervisor tzdata && \
