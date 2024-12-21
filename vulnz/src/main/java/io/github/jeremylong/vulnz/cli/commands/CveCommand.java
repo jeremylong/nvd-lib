@@ -35,6 +35,7 @@ import io.github.jeremylong.vulnz.cli.model.BasicOutput;
 import io.github.jeremylong.vulnz.cli.ui.IProgressMonitor;
 import io.github.jeremylong.vulnz.cli.ui.JlineShutdownHook;
 import io.github.jeremylong.vulnz.cli.ui.ProgressMonitor;
+import io.prometheus.metrics.core.metrics.Gauge;
 import org.apache.commons.io.output.CountingOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -77,6 +78,8 @@ public class CveCommand extends AbstractNvdCommand {
      * Hex code characters used in getHex.
      */
     private static final String HEXES = "0123456789abcdef";
+
+    private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of loaded cve's").register();
 
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;
@@ -254,7 +257,7 @@ public class CveCommand extends AbstractNvdCommand {
         return processRequest(builder);
     }
 
-    private Integer processRequest(NvdCveClientBuilder builder, CacheProperties properties) {
+    private Integer processRequest(NvdCveClientBuilder builder, CacheProperties properties) throws InterruptedException {
         final ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         if (isPrettyPrint()) {
@@ -273,6 +276,7 @@ public class CveCommand extends AbstractNvdCommand {
                         GZIPInputStream gzipInputStream = new GZIPInputStream(fileInputStream)) {
                     data = objectMapper.readValue(gzipInputStream, CveApiJson20.class);
                 } catch (IOException exception) {
+                    Thread.sleep(10000);
                     throw new CacheException("Unable to read cached data: " + file, exception);
                 }
                 collectCves(cves, data.getVulnerabilities());
@@ -288,6 +292,7 @@ public class CveCommand extends AbstractNvdCommand {
                 collectCves(cves, data);
                 lastModified = api.getLastUpdated();
                 count += data.size();
+                CVE_COUNTER.set(count);
                 monitor.updateProgress("NVD", count, api.getTotalAvailable());
             }
         } catch (Exception ex) {

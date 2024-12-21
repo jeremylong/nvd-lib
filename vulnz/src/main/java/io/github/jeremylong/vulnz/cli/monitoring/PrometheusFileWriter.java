@@ -46,7 +46,7 @@ public class PrometheusFileWriter {
         JvmMetrics.builder().register();
     }
 
-    @Scheduled(fixedRate = 5000)
+    @Scheduled(fixedRateString = "${metrics.write.interval:5000}")
     public void writeFile() {
         File directory = command.getCacheDirectory();
         if (directory != null) {
