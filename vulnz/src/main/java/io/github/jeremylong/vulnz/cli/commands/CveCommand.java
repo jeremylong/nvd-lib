@@ -79,7 +79,8 @@ public class CveCommand extends AbstractNvdCommand {
      */
     private static final String HEXES = "0123456789abcdef";
 
-    private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of loaded cve's").register();
+    private static final Gauge CVE_LOAD_COUNTER = Gauge.builder().name("cve_load_counter").help("Total number of loaded cve's").register();
+    private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of cached cve's").register();
 
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;
@@ -291,13 +292,14 @@ public class CveCommand extends AbstractNvdCommand {
                 collectCves(cves, data);
                 lastModified = api.getLastUpdated();
                 count += data.size();
-                CVE_COUNTER.set(count);
+                CVE_LOAD_COUNTER.set(count);
                 monitor.updateProgress("NVD", count, api.getTotalAvailable());
             }
         } catch (Exception ex) {
             LOG.debug("\nERROR", ex);
             throw new CacheException("Unable to complete NVD cache update due to error: " + ex.getMessage());
         }
+        CVE_COUNTER.set(cves.values().stream().mapToLong(HashMap::size).sum());
         if (lastModified != null) {
             properties.set("lastModifiedDate", lastModified);
         }
