@@ -34,7 +34,6 @@ import org.springframework.boot.autoconfigure.info.ProjectInfoAutoConfiguration;
 import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
 import org.springframework.boot.autoconfigure.sql.init.SqlInitializationAutoConfiguration;
 import org.springframework.boot.autoconfigure.task.TaskExecutionAutoConfiguration;
-import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import picocli.CommandLine;
 import picocli.spring.boot.autoconfigure.PicocliAutoConfiguration;
@@ -42,7 +41,7 @@ import picocli.spring.boot.autoconfigure.PicocliAutoConfiguration;
 @SpringBootApplication()
 @EnableScheduling
 // speed up spring load time.
-@ImportAutoConfiguration(value = {PicocliAutoConfiguration.class, TaskSchedulingAutoConfiguration.class}, exclude = {
+@ImportAutoConfiguration(value = {PicocliAutoConfiguration.class}, exclude = {
         ConfigurationPropertiesAutoConfiguration.class, ProjectInfoAutoConfiguration.class,
         PropertyPlaceholderAutoConfiguration.class, LifecycleAutoConfiguration.class,
         ApplicationAvailabilityAutoConfiguration.class, AopAutoConfiguration.class, JacksonAutoConfiguration.class,
