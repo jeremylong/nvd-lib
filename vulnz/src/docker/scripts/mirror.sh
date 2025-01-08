@@ -1,5 +1,11 @@
 #!/bin/sh
 
+function shutdown () {
+  exit 0
+}
+
+trap shutdown HUP INT QUIT ABRT KILL ALRM TERM TSTP
+
 echo "Updating..."
 
 DELAY_ARG=""
@@ -43,3 +49,4 @@ for file in /usr/local/apache2/htdocs/*.gz; do
         break
     fi
 done
+
