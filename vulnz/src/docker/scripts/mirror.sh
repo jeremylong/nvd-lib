@@ -1,10 +1,5 @@
 #!/bin/sh
-
-function shutdown () {
-  exit 0
-}
-
-trap shutdown HUP INT QUIT ABRT KILL ALRM TERM TSTP
+set -e
 
 echo "Updating..."
 
@@ -38,15 +33,5 @@ if [ -n "${DEBUG}" ]; then
   DEBUG_ARG="--debug"
 fi
 
-java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
-
-echo "Validating the cache..."
-for file in /usr/local/apache2/htdocs/*.gz; do
-    if ! gzip -t "$file"; then
-        echo "Corrupt gz file detected: $file, clearing cache and re-running mirror"
-        rm -rf /usr/local/apache2/htdocs/*
-        java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
-        break
-    fi
-done
+exec java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
 
