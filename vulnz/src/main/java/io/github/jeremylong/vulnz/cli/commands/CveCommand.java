@@ -36,6 +36,8 @@ import io.github.jeremylong.vulnz.cli.ui.IProgressMonitor;
 import io.github.jeremylong.vulnz.cli.ui.JlineShutdownHook;
 import io.github.jeremylong.vulnz.cli.ui.ProgressMonitor;
 import io.prometheus.metrics.core.metrics.Gauge;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import org.apache.commons.io.output.CountingOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -266,54 +268,47 @@ public class CveCommand extends AbstractNvdCommand {
         if (isPrettyPrint()) {
             objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
         }
-        final HashMap<String, HashMap<String, DefCveItem>> cves = new HashMap<>();
-        cves.put("modified", new HashMap<>());
-        final String prefix = properties.get("prefix", "nvdcve-");
-        // load existing cached files
-        for (int year = 2002; year <= Year.now().getValue(); year++) {
-            File file = new File(properties.getDirectory(), prefix + year + ".json.gz");
-            cves.put(Integer.toString(year), new HashMap<>());
-            if (file.isFile()) {
-                CveApiJson20 data;
-                try (FileInputStream fileInputStream = new FileInputStream(file);
-                        GZIPInputStream gzipInputStream = new GZIPInputStream(fileInputStream)) {
-                    data = objectMapper.readValue(gzipInputStream, CveApiJson20.class);
-                } catch (IOException exception) {
-                    throw new CacheException("Unable to read cached data: " + file, exception);
-                }
-                collectCves(cves, data.getVulnerabilities());
-            }
-        }
-        ZonedDateTime lastModified = null;
-        int count = 0;
-        // retrieve from NVD API
-        try (NvdCveClient api = builder.build(); IProgressMonitor monitor = new ProgressMonitor(interactive, "NVD")) {
-            Runtime.getRuntime().addShutdownHook(new JlineShutdownHook());
-            while (api.hasNext()) {
-                Collection<DefCveItem> data = api.next();
-                collectCves(cves, data);
-                lastModified = api.getLastUpdated();
-                count += data.size();
-                CVE_LOAD_COUNTER.set(count);
-                monitor.updateProgress("NVD", count, api.getTotalAvailable());
-            }
-        } catch (Exception ex) {
-            LOG.debug("\nERROR", ex);
-            throw new CacheException("Unable to complete NVD cache update due to error: " + ex.getMessage());
-        }
-        CVE_COUNTER.set(cves.values().stream().mapToLong(HashMap::size).sum());
+        final Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves = new Object2ObjectOpenHashMap<>();
+        populateKeys(cves);
+
+        ZonedDateTime lastModified = downloadAllUpdates(builder, cves);
         if (lastModified != null) {
             properties.set("lastModifiedDate", lastModified);
         }
-        // write cache
+        // update cache
         // todo - get format and version from API
         final String format = "NVD_CVE";
         final String version = "2.0";
+        final String prefix = properties.get("prefix", "nvdcve-");
 
-        for (Map.Entry<String, HashMap<String, DefCveItem>> entry : cves.entrySet()) {
-            File file = new File(properties.getDirectory(), prefix + entry.getKey() + ".json.gz");
-            File meta = new File(properties.getDirectory(), prefix + entry.getKey() + ".meta");
-            List<DefCveItem> vulnerabilities = new ArrayList<DefCveItem>(entry.getValue().values());
+        for (Object2ObjectMap.Entry<String, Object2ObjectOpenHashMap<String, DefCveItem>> entry : cves
+                .object2ObjectEntrySet()) {
+            if (entry.getValue().isEmpty()) {
+                continue;
+            }
+            final File file = new File(properties.getDirectory(), prefix + entry.getKey() + ".json.gz");
+            final File meta = new File(properties.getDirectory(), prefix + entry.getKey() + ".meta");
+            final Object2ObjectOpenHashMap<String, DefCveItem> yearData;
+
+            // Load existing year data if present
+            if (file.isFile()) {
+                yearData = new Object2ObjectOpenHashMap<>();
+                try (FileInputStream fis = new FileInputStream(file); GZIPInputStream gzis = new GZIPInputStream(fis)) {
+                    CveApiJson20 data = objectMapper.readValue(gzis, CveApiJson20.class);
+                    boolean isYearData = !"modified".equals(entry.getKey());
+                    // filter the "modified" data to load only the last 7 days of data
+                    data.getVulnerabilities().stream().filter(cve -> isYearData
+                            || ChronoUnit.DAYS.between(cve.getCve().getLastModified(), ZonedDateTime.now()) <= 7)
+                            .forEach(cve -> yearData.put(cve.getCve().getId(), cve));
+                } catch (IOException exception) {
+                    throw new CacheException("Unable to read cached data: " + file, exception);
+                }
+                yearData.putAll(entry.getValue());
+            } else {
+                yearData = entry.getValue();
+            }
+
+            List<DefCveItem> vulnerabilities = new ArrayList<DefCveItem>(yearData.values());
             vulnerabilities.sort((v1, v2) -> {
                 return v1.getCve().getId().compareTo(v2.getCve().getId());
             });
@@ -362,6 +357,37 @@ public class CveCommand extends AbstractNvdCommand {
         return 0;
     }
 
+    private static void populateKeys(
+            Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves) {
+        cves.put("modified", new Object2ObjectOpenHashMap<>());
+        for (int i = 2002; i <= Year.now().getValue(); i++) {
+            cves.put(Integer.toString(i), new Object2ObjectOpenHashMap<>());
+        }
+    }
+
+    private ZonedDateTime downloadAllUpdates(NvdCveClientBuilder builder,
+            Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves) {
+        ZonedDateTime lastModified = null;
+        int count = 0;
+        // retrieve from NVD API
+        try (NvdCveClient api = builder.build(); IProgressMonitor monitor = new ProgressMonitor(interactive, "NVD")) {
+            Runtime.getRuntime().addShutdownHook(new JlineShutdownHook());
+            while (api.hasNext()) {
+                Collection<DefCveItem> data = api.next();
+                collectCves(cves, data);
+                lastModified = api.getLastUpdated();
+                count += data.size();
+                CVE_LOAD_COUNTER.set(count);
+                monitor.updateProgress("NVD", count, api.getTotalAvailable());
+            }
+        } catch (Exception ex) {
+            LOG.debug("\nERROR", ex);
+            throw new CacheException("Unable to complete NVD cache update due to error: " + ex.getMessage());
+        }
+        CVE_COUNTER.set(cves.values().stream().mapToLong(Object2ObjectOpenHashMap::size).sum());
+        return lastModified;
+    }
+
     /**
      * <p>
      * Converts a byte array into a hex string.
@@ -386,7 +412,7 @@ public class CveCommand extends AbstractNvdCommand {
         return hex.toString();
     }
 
-    private void collectCves(HashMap<String, HashMap<String, DefCveItem>> cves,
+    private void collectCves(Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves,
             Collection<DefCveItem> vulnerabilities) {
         for (DefCveItem item : vulnerabilities) {
             cves.get(getNvdYear(item)).put(item.getCve().getId(), item);
