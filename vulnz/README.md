@@ -116,6 +116,7 @@ There are a couple of ENV vars
 - `MAX_RECORDS_PER_PAGE_ARG` Using max records per page
 - `METRICS_ENABLE` If is set to `true`, OpenMetrics data for the vulnz cli can be retrieved via the endpoint http://.../metrics
 - `METRICS_WRITE_INTERVAL` Sets the update interval for generating metrics, in milliseconds. Default: `5000`
+- `METRICS_WRITE_FORMAT` Sets the output format for the metrics. Either openmetrics or Prometheus format. Default: `openmetrics`
 
 ### Run
 

@@ -17,12 +17,15 @@
 package io.github.jeremylong.vulnz.cli.monitoring;
 
 import io.github.jeremylong.vulnz.cli.commands.CveCommand;
+import io.prometheus.metrics.expositionformats.ExpositionFormatWriter;
 import io.prometheus.metrics.expositionformats.OpenMetricsTextFormatWriter;
+import io.prometheus.metrics.expositionformats.PrometheusTextFormatWriter;
 import io.prometheus.metrics.instrumentation.jvm.JvmMetrics;
 import io.prometheus.metrics.model.registry.PrometheusRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -41,6 +44,9 @@ public class PrometheusFileWriter {
     @Autowired
     private CveCommand command;
 
+    @Value("${metrics.writer.format:openmetrics}")
+    private String metricsFormat;
+
     @PostConstruct
     public void init() {
         JvmMetrics.builder().register();
@@ -52,11 +58,18 @@ public class PrometheusFileWriter {
         if (directory != null) {
             final PrometheusRegistry defaultRegistry = PrometheusRegistry.defaultRegistry;
             try (FileOutputStream out = new FileOutputStream(new File(directory, "metrics"))) {
-                OpenMetricsTextFormatWriter writer = new OpenMetricsTextFormatWriter(true, true);
-                writer.write(out, defaultRegistry.scrape());
+                createWriter().write(out, defaultRegistry.scrape());
             } catch (IOException e) {
                 LOG.error("Error writing metrics", e);
             }
+        }
+    }
+
+    private ExpositionFormatWriter createWriter() {
+        if ("prometheus".equalsIgnoreCase(metricsFormat)) {
+            return new PrometheusTextFormatWriter(true);
+        } else {
+            return new OpenMetricsTextFormatWriter(true, true);
         }
     }
 }
