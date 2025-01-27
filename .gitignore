@@ -32,3 +32,6 @@ nb-configuration.xml
 **/nbproject/
 local.properties
 data-source/data/
+
+# IntellIJ run configs
+.run
