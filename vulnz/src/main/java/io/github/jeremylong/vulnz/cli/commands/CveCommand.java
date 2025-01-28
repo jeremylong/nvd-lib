@@ -299,7 +299,7 @@ public class CveCommand extends AbstractNvdCommand {
             }
         }
 
-        createRecentlyChangedCacheFile(recentlyChangedEntries, properties, ZonedDateTime.now());
+        createCacheRecentlyChangedCacheFile(recentlyChangedEntries, properties, ZonedDateTime.now());
 
         return 0;
     }
@@ -385,12 +385,7 @@ public class CveCommand extends AbstractNvdCommand {
 
         CveApiJson20 data = new CveApiJson20(size, 0, size, FORMAT, VERSION, lastChanged, cves.vulnerabilities);
 
-        MessageDigest md;
-        try {
-            md = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new CacheException("Unable to calculate sha256 checksum", e);
-        }
+        MessageDigest md = getDigestAlg();
 
         // save vulnerabilities into cache
         final File cacheFile = buildCacheTargetFileForYear(properties, year).toFile();
@@ -405,21 +400,23 @@ public class CveCommand extends AbstractNvdCommand {
      * Create cache holding all CVE items that have been changed within the last 7 days. Creates:
      * nvdcve-modified.json.gz and nvdcve-modified.meta
      */
-    private void createRecentlyChangedCacheFile(List<DefCveItem> recentlyChangedEntries, CacheProperties properties,
+    private void createCacheRecentlyChangedCacheFile(List<DefCveItem> recentlyChanged, CacheProperties properties,
             ZonedDateTime lastChanged) {
         final String prefix = properties.get("prefix", "nvdcve-");
         Path recentChangesCachePath = Path.of(properties.getDirectory().getPath(), prefix + "modified.json.gz");
-        CveApiJson20 data = new CveApiJson20(recentlyChangedEntries.size(), 0, recentlyChangedEntries.size(), FORMAT,
-                VERSION, lastChanged, recentlyChangedEntries);
-        MessageDigest md;
-        try {
-            md = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new CacheException("Unable to calculate sha256 checksum", e);
-        }
+        int recentSize = recentlyChanged.size();
+
+        CveApiJson20 data = new CveApiJson20(recentSize, 0, recentSize, FORMAT, VERSION, lastChanged, recentlyChanged);
+
+        MessageDigest md = getDigestAlg();
+
+        // create cache file including the CVE entries that recently changed
         File recentCacheFile = recentChangesCachePath.toFile();
         long uncompressedSize = saveCacheAsGzip(recentCacheFile, data, md);
+        LOG.info("INFO Stored {} entries in {} as recent changed items across all years",
+                data.getVulnerabilities().size(), recentCacheFile.getName());
 
+        // Create meta-file
         Path metaDataFile = Path.of(properties.getDirectory().getPath(), prefix + "modified.meta");
         saveMetaData(metaDataFile.toFile(), recentCacheFile.length(), uncompressedSize, lastChanged, md);
     }
@@ -547,6 +544,14 @@ public class CveCommand extends AbstractNvdCommand {
             hex.append(HEXES.charAt((b & 0xF0) >> 4)).append(HEXES.charAt(b & 0x0F));
         }
         return hex.toString();
+    }
+
+    private MessageDigest getDigestAlg() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new CacheException("Unable to calculate sha256 checksum", e);
+        }
     }
 
     private int processRequest(NvdCveClientBuilder builder) throws IOException {
