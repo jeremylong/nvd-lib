@@ -39,12 +39,11 @@ COPY ["/src/docker/supervisor/supervisord.conf", "/etc/supervisord.conf"]
 COPY ["/src/docker/scripts/mirror.sh", "/mirror.sh"]
 COPY ["/src/docker/scripts/validate.sh", "/validate.sh"]
 COPY ["/src/docker/crontab/mirror", "/etc/crontabs/mirror"]
-COPY ["/src/docker/crontab/validate", "/etc/crontabs/validate"]
 COPY ["/src/docker/apache/mirror.conf", "/usr/local/apache2/conf"]
 COPY ["/build/libs/vulnz-$BUILD_VERSION.jar", "/usr/local/bin/vulnz"]
 
 RUN chmod +x /mirror.sh /validate.sh && \
-    chown root:root /etc/crontabs/mirror /etc/crontabs/validate && \
+    chown root:root /etc/crontabs/mirror && \
     chown mirror:mirror /mirror.sh /validate.sh && \
     chown mirror:mirror /usr/local/bin/vulnz 
 

@@ -1,1 +1,0 @@
-0 4 * * * /validate.sh 2>&1 | tee -a /var/log/docker_out.log | tee -a /var/log/cron_validate.log
