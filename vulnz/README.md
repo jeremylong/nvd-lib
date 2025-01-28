@@ -132,7 +132,6 @@ docker run --name vulnz -e JAVA_OPT=-Xmx2g jeremylong/open-vulnerability-data-mi
 
 # you can also adjust the delay 
 docker run --name vulnz -e NVD_API_KEY=myapikey -e DELAY=3000 jeremylong/open-vulnerability-data-mirror:v7.2.1 
-
 ```
 
 If you like, run this to pre-populate the database right away
@@ -148,7 +147,8 @@ Assuming the current version is `7.2.1`
 ```bash
 export TARGET_VERSION=7.2.1
 ./gradlew vulnz:build -Pversion=$TARGET_VERSION
-docker build vulnz/ -t ghcr.io/jeremylong/vulnz:$TARGET_VERSION --build-arg BUILD_VERSION=$TARGET_VERSION
+docker build vulnz/ -t ghcr.io/jeremylong/vulnz:v$TARGET_VERSION --build-arg BUILD_VERSION=$TARGET_VERSION
+docker push 
 ```
 
 ### Release
