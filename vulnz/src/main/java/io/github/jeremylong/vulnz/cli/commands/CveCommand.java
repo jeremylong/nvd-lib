@@ -25,6 +25,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.github.jeremylong.openvulnerability.client.nvd.CveApiJson20;
 import io.github.jeremylong.openvulnerability.client.nvd.DefCveItem;
 import io.github.jeremylong.openvulnerability.client.nvd.NvdCveClient;
@@ -85,6 +86,7 @@ public class CveCommand extends AbstractNvdCommand {
             .help("Total number of loaded cve's").register();
     private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of cached cve's")
             .register();
+    public static final int MAX_ENTRIES_PER_YEAR = 5000;
 
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;
@@ -124,6 +126,9 @@ public class CveCommand extends AbstractNvdCommand {
     @CommandLine.Option(names = {"--interactive"}, description = "Displays a progress bar")
     private boolean interactive;
 
+    private static CacheProperties properties = null;
+    final static ObjectMapper objectMapper = new ObjectMapper();
+
     public File getCacheDirectory() {
         if (configGroup != null && configGroup.cacheSettings != null) {
             return configGroup.cacheSettings.directory;
@@ -132,12 +137,19 @@ public class CveCommand extends AbstractNvdCommand {
         }
     }
 
+    @SuppressFBWarnings(value = {"ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"}, justification = "I'm being careful")
     @Override
     public Integer timedCall() throws Exception {
         if (isDebug()) {
             LoggerContext loggerContext = (LoggerContext) LoggerFactory.getILoggerFactory();
             loggerContext.getLogger("io.github.jeremylong").setLevel(Level.DEBUG);
         }
+
+        objectMapper.registerModule(new JavaTimeModule());
+        if (isPrettyPrint()) {
+            objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
+        }
+
         String apiKey = getApiKey();
         if (apiKey == null || apiKey.isEmpty()) {
             LOG.info("NVD_API_KEY not found. Supply an API key for more generous rate limits");
@@ -228,7 +240,7 @@ public class CveCommand extends AbstractNvdCommand {
         }
 
         if (configGroup != null && configGroup.cacheSettings != null) {
-            CacheProperties properties = new CacheProperties(configGroup.cacheSettings.directory);
+            properties = new CacheProperties(configGroup.cacheSettings.directory);
             if (properties.has("lastModifiedDate")) {
                 ZonedDateTime start = properties.getTimestamp("lastModifiedDate");
                 ZonedDateTime end = start.minusDays(-120);
@@ -243,7 +255,7 @@ public class CveCommand extends AbstractNvdCommand {
                 properties.set("prefix", configGroup.cacheSettings.prefix);
             }
             try {
-                int status = processRequest(builder, properties);
+                int status = processCacheRequest(builder);
                 properties.save();
                 return status;
             } catch (CacheException ex) {
@@ -262,12 +274,8 @@ public class CveCommand extends AbstractNvdCommand {
         return processRequest(builder);
     }
 
-    private Integer processRequest(NvdCveClientBuilder builder, CacheProperties properties) {
-        final ObjectMapper objectMapper = new ObjectMapper();
-        objectMapper.registerModule(new JavaTimeModule());
-        if (isPrettyPrint()) {
-            objectMapper.enable(SerializationFeature.INDENT_OUTPUT);
-        }
+    private Integer processCacheRequest(NvdCveClientBuilder builder) {
+
         final Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves = new Object2ObjectOpenHashMap<>();
         populateKeys(cves);
 
@@ -276,85 +284,88 @@ public class CveCommand extends AbstractNvdCommand {
             properties.set("lastModifiedDate", lastModified);
         }
         // update cache
-        // todo - get format and version from API
+
+        for (Object2ObjectMap.Entry<String, Object2ObjectOpenHashMap<String, DefCveItem>> entry : cves
+                .object2ObjectEntrySet()) {
+            writeCacheFile(entry.getKey(), entry.getValue());
+        }
+        return 0;
+    }
+
+    private static void writeCacheFile(String year, Object2ObjectOpenHashMap<String, DefCveItem> newEntries) {
+        if (newEntries.isEmpty()) {
+            return;
+        }
         final String format = "NVD_CVE";
         final String version = "2.0";
         final String prefix = properties.get("prefix", "nvdcve-");
 
-        for (Object2ObjectMap.Entry<String, Object2ObjectOpenHashMap<String, DefCveItem>> entry : cves
-                .object2ObjectEntrySet()) {
-            if (entry.getValue().isEmpty()) {
-                continue;
-            }
-            final File file = new File(properties.getDirectory(), prefix + entry.getKey() + ".json.gz");
-            final File meta = new File(properties.getDirectory(), prefix + entry.getKey() + ".meta");
-            final Object2ObjectOpenHashMap<String, DefCveItem> yearData;
+        final File file = new File(properties.getDirectory(), prefix + year + ".json.gz");
+        final File meta = new File(properties.getDirectory(), prefix + year + ".meta");
+        final Object2ObjectOpenHashMap<String, DefCveItem> yearData;
 
-            // Load existing year data if present
-            if (file.isFile()) {
-                yearData = new Object2ObjectOpenHashMap<>();
-                try (FileInputStream fis = new FileInputStream(file); GZIPInputStream gzis = new GZIPInputStream(fis)) {
-                    CveApiJson20 data = objectMapper.readValue(gzis, CveApiJson20.class);
-                    boolean isYearData = !"modified".equals(entry.getKey());
-                    // filter the "modified" data to load only the last 7 days of data
-                    data.getVulnerabilities().stream().filter(cve -> isYearData
-                            || ChronoUnit.DAYS.between(cve.getCve().getLastModified(), ZonedDateTime.now()) <= 7)
-                            .forEach(cve -> yearData.put(cve.getCve().getId(), cve));
-                } catch (IOException exception) {
-                    throw new CacheException("Unable to read cached data: " + file, exception);
-                }
-                yearData.putAll(entry.getValue());
-            } else {
-                yearData = entry.getValue();
+        // Load existing year data if present
+        if (file.isFile()) {
+            yearData = new Object2ObjectOpenHashMap<>();
+            try (FileInputStream fis = new FileInputStream(file); GZIPInputStream gzis = new GZIPInputStream(fis)) {
+                CveApiJson20 data = objectMapper.readValue(gzis, CveApiJson20.class);
+                boolean isYearData = !"modified".equals(year);
+                // filter the "modified" data to load only the last 7 days of data
+                data.getVulnerabilities().stream()
+                        .filter(cve -> isYearData
+                                || ChronoUnit.DAYS.between(cve.getCve().getLastModified(), ZonedDateTime.now()) <= 7)
+                        .forEach(cve -> yearData.put(cve.getCve().getId(), cve));
+            } catch (IOException exception) {
+                throw new CacheException("Unable to read cached data: " + file, exception);
             }
-
-            List<DefCveItem> vulnerabilities = new ArrayList<DefCveItem>(yearData.values());
-            vulnerabilities.sort((v1, v2) -> {
-                return v1.getCve().getId().compareTo(v2.getCve().getId());
-            });
-            ZonedDateTime timestamp;
-            Optional<ZonedDateTime> maxDate = vulnerabilities.stream().map(v -> v.getCve().getLastModified())
-                    .max(ZonedDateTime::compareTo);
-            if (maxDate.isPresent()) {
-                timestamp = maxDate.get();
-            } else if (lastModified != null) {
-                timestamp = lastModified;
-            } else {
-                timestamp = ZonedDateTime.now();
-            }
-            properties.set("lastModifiedDate." + entry.getKey(), timestamp);
-            CveApiJson20 data = new CveApiJson20(vulnerabilities.size(), 0, vulnerabilities.size(), format, version,
-                    timestamp, vulnerabilities);
-            MessageDigest md;
-            try {
-                md = MessageDigest.getInstance("SHA-256");
-            } catch (NoSuchAlgorithmException e) {
-                throw new CacheException("Unable to calculate sha256 checksum", e);
-            }
-            long byteCount = 0;
-            try (FileOutputStream fileOutputStream = new FileOutputStream(file);
-                    GZIPOutputStream gzipOutputStream = new GZIPOutputStream(fileOutputStream);
-                    DigestOutputStream digestOutputStream = new DigestOutputStream(gzipOutputStream, md);
-                    CountingOutputStream countingOutputStream = new CountingOutputStream(digestOutputStream)) {
-                objectMapper.writeValue(countingOutputStream, data);
-                byteCount = countingOutputStream.getByteCount();
-            } catch (IOException ex) {
-                throw new CacheException("Unable to write cached data: " + file, ex);
-            }
-            String checksum = getHex(md.digest());
-            try (FileOutputStream fileOutputStream = new FileOutputStream(meta);
-                    OutputStreamWriter osw = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
-                    PrintWriter writer = new PrintWriter(osw)) {
-                final String lmd = DateTimeFormatter.ISO_DATE_TIME.format(timestamp);
-                writer.println("lastModifiedDate:" + lmd);
-                writer.println("size:" + byteCount);
-                writer.println("gzSize:" + file.length());
-                writer.println("sha256:" + checksum);
-            } catch (IOException ex) {
-                throw new CacheException("Unable to write cached meta-data: " + file, ex);
-            }
+            yearData.putAll(newEntries);
+        } else {
+            yearData = newEntries;
         }
-        return 0;
+
+        List<DefCveItem> vulnerabilities = new ArrayList<DefCveItem>(yearData.values());
+        vulnerabilities.sort((v1, v2) -> {
+            return v1.getCve().getId().compareTo(v2.getCve().getId());
+        });
+        ZonedDateTime timestamp;
+        Optional<ZonedDateTime> maxDate = vulnerabilities.stream().map(v -> v.getCve().getLastModified())
+                .max(ZonedDateTime::compareTo);
+        if (maxDate.isPresent()) {
+            timestamp = maxDate.get();
+        } else {
+            timestamp = ZonedDateTime.now();
+        }
+        properties.set("lastModifiedDate." + year, timestamp);
+        CveApiJson20 data = new CveApiJson20(vulnerabilities.size(), 0, vulnerabilities.size(), format, version,
+                timestamp, vulnerabilities);
+        MessageDigest md;
+        try {
+            md = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new CacheException("Unable to calculate sha256 checksum", e);
+        }
+        long byteCount = 0;
+        try (FileOutputStream fileOutputStream = new FileOutputStream(file);
+                GZIPOutputStream gzipOutputStream = new GZIPOutputStream(fileOutputStream);
+                DigestOutputStream digestOutputStream = new DigestOutputStream(gzipOutputStream, md);
+                CountingOutputStream countingOutputStream = new CountingOutputStream(digestOutputStream)) {
+            objectMapper.writeValue(countingOutputStream, data);
+            byteCount = countingOutputStream.getByteCount();
+        } catch (IOException ex) {
+            throw new CacheException("Unable to write cached data: " + file, ex);
+        }
+        String checksum = getHex(md.digest());
+        try (FileOutputStream fileOutputStream = new FileOutputStream(meta);
+                OutputStreamWriter osw = new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8);
+                PrintWriter writer = new PrintWriter(osw)) {
+            final String lmd = DateTimeFormatter.ISO_DATE_TIME.format(timestamp);
+            writer.println("lastModifiedDate:" + lmd);
+            writer.println("size:" + byteCount);
+            writer.println("gzSize:" + file.length());
+            writer.println("sha256:" + checksum);
+        } catch (IOException ex) {
+            throw new CacheException("Unable to write cached meta-data: " + file, ex);
+        }
     }
 
     private static void populateKeys(
@@ -415,7 +426,12 @@ public class CveCommand extends AbstractNvdCommand {
     private void collectCves(Object2ObjectOpenHashMap<String, Object2ObjectOpenHashMap<String, DefCveItem>> cves,
             Collection<DefCveItem> vulnerabilities) {
         for (DefCveItem item : vulnerabilities) {
-            cves.get(getNvdYear(item)).put(item.getCve().getId(), item);
+            String year = getNvdYear(item);
+            cves.get(year).put(item.getCve().getId(), item);
+            if (cves.get(year).size() >= MAX_ENTRIES_PER_YEAR && properties != null) {
+                writeCacheFile(year, cves.get(year));
+                cves.get(year).clear();
+            }
             if (ChronoUnit.DAYS.between(item.getCve().getLastModified(), ZonedDateTime.now()) <= 7) {
                 cves.get("modified").put(item.getCve().getId(), item);
             }
