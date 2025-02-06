@@ -1,7 +1,16 @@
 #!/bin/sh
+
 set -e
 
 echo "Updating..."
+
+LOCKFILE=/tmp/vulzn.lock
+
+if [ -f $LOCKFILE ]; then
+  echo "Lockfile found - another mirror-sync process already running"
+else
+  touch $LOCKFILE
+fi
 
 DELAY_ARG=""
 if [ -z $NVD_API_KEY ]; then
@@ -33,5 +42,12 @@ if [ -n "${DEBUG}" ]; then
   DEBUG_ARG="--debug"
 fi
 
-exec java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG --cache --directory /usr/local/apache2/htdocs
+function remove_lockfile() {
+  rm -f $LOCKFILE
+  exit 0
+}
+trap remove_lockfile SIGHUP SIGINT SIGQUIT SIGABRT SIGALRM SIGTERM SIGTSTP
 
+java $JAVA_OPT -jar /usr/local/bin/vulnz cve $DELAY_ARG $DEBUG_ARG $MAX_RETRY_ARG $MAX_RECORDS_PER_PAGE_ARG $CONTINUE_ARG --cache --directory /usr/local/apache2/htdocs
+
+rm -f $LOCKFILE
