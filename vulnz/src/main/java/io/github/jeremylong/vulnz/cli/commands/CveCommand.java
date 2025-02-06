@@ -38,6 +38,7 @@ import io.github.jeremylong.vulnz.cli.ui.JlineShutdownHook;
 import io.github.jeremylong.vulnz.cli.ui.ProgressMonitor;
 import io.prometheus.metrics.core.metrics.Gauge;
 import java.io.*;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.*;
 import java.time.temporal.ChronoUnit;
@@ -85,6 +86,7 @@ public class CveCommand extends AbstractNvdCommand {
             .help("Total number of loaded cve's").register();
     private static final Gauge CVE_COUNTER = Gauge.builder().name("cve_counter").help("Total number of cached cve's")
             .register();
+    public static final int EIGHT_DAYS = 8;
 
     @CommandLine.ArgGroup(exclusive = true)
     ConfigGroup configGroup;
@@ -256,7 +258,7 @@ public class CveCommand extends AbstractNvdCommand {
      * For all years, fetch the NVD vulnerabilities and save them each into one cache file.
      */
     private Integer processRequest(NvdCveClientBuilder apiBuilder, CacheProperties properties) {
-        // will hold all entries that have been changed within the last 7 days across all years
+        // will hold all entries that have been changed within the last 8 days across all years
         List<DefCveItem> recentlyChangedEntries = new ArrayList<>();
 
         for (int currentYear = START_YEAR; currentYear <= Year.now().getValue(); currentYear++) {
@@ -269,8 +271,7 @@ public class CveCommand extends AbstractNvdCommand {
 
                 Path cacheFilePath = buildCacheTargetFileForYear(properties, currentYear);
                 LOG.info("INFO *** Processing year {} ***", currentYear);
-                CvesNvdPojo existingCacheData = loadExistingCacheAndConfigureApi(apiBuilder, currentYear,
-                        cacheFilePath);
+                CvesNvdPojo existingCacheData = loadExistingCacheAndConfigureApi(apiBuilder, cacheFilePath);
                 CvesNvdPojo cvesForYear = aggregateCvesForYear(currentYear, apiBuilder);
 
                 // merge old with new data. It is intended to add old items to the new ones, thus we keep newly fetched
@@ -291,7 +292,7 @@ public class CveCommand extends AbstractNvdCommand {
                 LOG.info("INFO *** Finished year {} with #{} entries ***", currentYear,
                         cvesForYear.vulnerabilities.size());
 
-                // calculate recently changed entries, means changed within the last 7 days
+                // calculate recently changed entries, means changed within the last 8 days
                 recentlyChangedEntries.addAll(extractRecentChangedEntries(cvesForYear));
             } catch (Exception ex) {
                 LOG.error("\nERROR processing year {}", currentYear, ex);
@@ -299,13 +300,32 @@ public class CveCommand extends AbstractNvdCommand {
             }
         }
 
+        recentlyChangedEntries = loadExistingModifiedCache(apiBuilder, properties, recentlyChangedEntries);
+
         createCacheRecentlyChangedCacheFile(recentlyChangedEntries, properties, ZonedDateTime.now());
 
         return 0;
     }
 
-    private CvesNvdPojo loadExistingCacheAndConfigureApi(NvdCveClientBuilder apiBuilder, int currentYear,
-            Path cacheFilePath) {
+    private List<DefCveItem> loadExistingModifiedCache(NvdCveClientBuilder apiBuilder, CacheProperties properties, List<DefCveItem> recentlyChangedEntries) {
+        try {
+            Path cacheFilePath = buildCacheTargetFileForYear(properties, "modified");
+            if (Files.isRegularFile(cacheFilePath)) {
+                List<DefCveItem> modified = new ArrayList<>();
+                CvesNvdPojo existing = loadExistingCacheAndConfigureApi(apiBuilder, cacheFilePath);
+                existing.vulnerabilities.stream()
+                        .filter(cve -> ChronoUnit.DAYS.between(cve.getCve().getLastModified(), ZonedDateTime.now()) <= EIGHT_DAYS)
+                        .forEach(cve -> modified.add(cve));
+                modified.addAll(recentlyChangedEntries);
+                recentlyChangedEntries = modified;
+            }
+        } catch (Exception ex) {
+            LOG.error("ERROR processing modified changed entries", ex);
+        }
+        return recentlyChangedEntries;
+    }
+
+    private CvesNvdPojo loadExistingCacheAndConfigureApi(NvdCveClientBuilder apiBuilder, Path cacheFilePath) {
         ZonedDateTime lastUpdateDate = determineExistingCacheFileLastChanged(cacheFilePath);
         if (lastUpdateDate == null) {
             // no existing cache exists - nothing to load and nothing to configure. Fetch the entire year.
@@ -314,7 +334,7 @@ public class CveCommand extends AbstractNvdCommand {
 
         // else only fetch entries that have been changed since the last update
         apiBuilder.withLastModifiedFilter(lastUpdateDate, ZonedDateTime.now());
-        LOG.info("INFO Found existing local cache for year {}. Cache was created/updated on {}", currentYear,
+        LOG.info("INFO Found existing local cache '{}'. Cache was created/updated on {}", cacheFilePath.getFileName(),
                 lastUpdateDate.format(DateTimeFormatter.RFC_1123_DATE_TIME));
         LOG.info("INFO Only fetching items that have been changed since then from the API");
 
@@ -397,7 +417,7 @@ public class CveCommand extends AbstractNvdCommand {
     }
 
     /**
-     * Create cache holding all CVE items that have been changed within the last 7 days. Creates:
+     * Create cache holding all CVE items that have been changed within the last 8 days. Creates:
      * nvdcve-modified.json.gz and nvdcve-modified.meta
      */
     private void createCacheRecentlyChangedCacheFile(List<DefCveItem> recentlyChanged, CacheProperties properties,
@@ -473,6 +493,10 @@ public class CveCommand extends AbstractNvdCommand {
                 ZoneId.systemDefault());
     }
 
+    private Path buildCacheTargetFileForYear(CacheProperties properties, String year) {
+        return buildCacheTargetFileForYear(properties, Integer.parseInt(year));
+    }
+
     private Path buildCacheTargetFileForYear(CacheProperties properties, int year) {
         final String prefix = properties.get("prefix", "nvdcve-");
         return Path.of(properties.getDirectory().getPath(), prefix + year + ".json.gz");
@@ -485,7 +509,7 @@ public class CveCommand extends AbstractNvdCommand {
 
     private List<DefCveItem> extractRecentChangedEntries(CvesNvdPojo cvesForYear) {
         return cvesForYear.vulnerabilities.stream()
-                .filter(item -> ChronoUnit.DAYS.between(item.getCve().getLastModified(), ZonedDateTime.now()) <= 7)
+                .filter(item -> ChronoUnit.DAYS.between(item.getCve().getLastModified(), ZonedDateTime.now()) <= EIGHT_DAYS)
                 .collect(Collectors.toList());
     }
 
